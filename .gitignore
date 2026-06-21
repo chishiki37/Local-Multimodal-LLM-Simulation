@@ -1,0 +1,20 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+
+# Environment
+.env
+*.pem
+certs/
+
+# Models (too large for git)
+models/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo

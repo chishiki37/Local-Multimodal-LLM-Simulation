@@ -1,0 +1,780 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Local Multimodal LLM Simulation — Test Console</title>
+<style>
+  :root {
+    --bg: #0a0a0f;
+    --card: #13131a;
+    --border: #1e1e2e;
+    --text: #e0e0e8;
+    --muted: #6b6b80;
+    --accent: #7c5cfc;
+    --accent-dim: #7c5cfc33;
+    --green: #4ade80;
+    --red: #f87171;
+    --yellow: #fbbf24;
+    --blue: #60a5fa;
+    --radius: 12px;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    font-family: -apple-system, 'Segoe UI', system-ui, sans-serif;
+    background: var(--bg);
+    color: var(--text);
+    min-height: 100vh;
+    padding: 16px;
+    -webkit-font-smoothing: antialiased;
+  }
+  .container { max-width: 900px; margin: 0 auto; }
+
+  /* Header */
+  .header {
+    display: flex; align-items: center; justify-content: space-between;
+    margin-bottom: 20px;
+  }
+  .header h1 {
+    font-size: 1.4rem; font-weight: 600;
+    background: linear-gradient(135deg, var(--accent), var(--blue));
+    -webkit-background-clip: text; -webkit-text-fill-color: transparent;
+  }
+  .header .subtitle { font-size: 0.75rem; color: var(--muted); margin-top: 2px; }
+
+  /* Status badges */
+  .badges { display: flex; gap: 8px; flex-wrap: wrap; }
+  .badge {
+    display: flex; align-items: center; gap: 6px;
+    padding: 4px 10px; border-radius: 20px;
+    font-size: 0.7rem; font-weight: 600;
+    background: var(--card); border: 1px solid var(--border);
+    transition: all 0.3s;
+  }
+  .badge .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--muted); }
+  .badge.ok .dot { background: var(--green); box-shadow: 0 0 6px var(--green); }
+  .badge.err .dot { background: var(--red); }
+  .badge.active .dot { background: var(--yellow); animation: pulse 1s infinite; }
+  .badge span.label { color: var(--muted); }
+  @keyframes pulse { 0%,100% { opacity: 1; } 50% { opacity: 0.3; } }
+
+  /* Layout grid */
+  .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin-bottom: 16px; }
+  @media (max-width: 640px) { .grid { grid-template-columns: 1fr; } }
+
+  /* Cards */
+  .card {
+    background: var(--card); border: 1px solid var(--border);
+    border-radius: var(--radius); padding: 16px;
+  }
+  .card-title {
+    font-size: 0.75rem; font-weight: 600; color: var(--muted);
+    text-transform: uppercase; letter-spacing: 0.05em; margin-bottom: 12px;
+  }
+
+  /* Video preview */
+  .video-card { position: relative; overflow: hidden; }
+  .video-card video, .video-card canvas {
+    width: 100%; border-radius: 8px; background: #000; display: block;
+  }
+  .video-card .placeholder {
+    width: 100%; aspect-ratio: 16/9; border-radius: 8px;
+    background: #0f0f17; display: flex; align-items: center; justify-content: center;
+    color: var(--muted); font-size: 0.8rem;
+  }
+  .frame-badge {
+    position: absolute; top: 8px; right: 8px;
+    background: rgba(0,0,0,0.7); padding: 3px 8px; border-radius: 4px;
+    font-size: 0.65rem; color: var(--accent);
+  }
+
+  /* Controls */
+  .controls { display: flex; gap: 10px; flex-wrap: wrap; margin-bottom: 16px; }
+  button {
+    background: var(--card); border: 1px solid var(--border);
+    color: var(--text); padding: 10px 20px; border-radius: 8px;
+    font-size: 0.85rem; font-weight: 600; cursor: pointer;
+    transition: all 0.2s; display: flex; align-items: center; gap: 8px;
+  }
+  button:hover:not(:disabled) { border-color: var(--accent); background: var(--accent-dim); }
+  button:disabled { opacity: 0.4; cursor: not-allowed; }
+  button.primary { background: var(--accent); border-color: var(--accent); color: white; }
+  button.primary:hover:not(:disabled) { filter: brightness(1.15); }
+  button.danger { border-color: var(--red); color: var(--red); }
+  button .icon { font-size: 1.1rem; }
+
+  /* Transcript area */
+  .transcript-card { min-height: 200px; max-height: 350px; overflow-y: auto; }
+  .msg {
+    margin-bottom: 12px; padding: 10px 14px; border-radius: 8px;
+    font-size: 0.85rem; line-height: 1.5;
+    animation: fadeIn 0.2s ease;
+  }
+  @keyframes fadeIn { from { opacity: 0; transform: translateY(4px); } to { opacity: 1; } }
+  .msg.user { background: var(--accent-dim); border-left: 3px solid var(--accent); }
+  .msg.ai { background: #0f0f17; border-left: 3px solid var(--green); }
+  .msg .role { font-size: 0.65rem; font-weight: 700; text-transform: uppercase; color: var(--muted); margin-bottom: 4px; }
+  .msg.partial { opacity: 0.6; }
+
+  /* State indicator */
+  .state-bar {
+    display: flex; align-items: center; justify-content: center; gap: 8px;
+    padding: 8px; background: #0f0f17; border-radius: 8px;
+    font-size: 0.75rem; color: var(--muted); margin-top: 12px;
+  }
+  .state-bar .state-dot {
+    width: 10px; height: 10px; border-radius: 50%; background: var(--muted);
+    transition: all 0.3s;
+  }
+  .state-bar.listening .state-dot { background: var(--yellow); box-shadow: 0 0 8px var(--yellow); animation: pulse 1s infinite; }
+  .state-bar.thinking .state-dot { background: var(--blue); box-shadow: 0 0 8px var(--blue); animation: pulse 0.5s infinite; }
+  .state-bar.speaking .state-dot { background: var(--green); box-shadow: 0 0 8px var(--green); animation: pulse 0.8s infinite; }
+
+  /* Audio visualizer */
+  .visualizer {
+    display: flex; align-items: flex-end; justify-content: center;
+    gap: 3px; height: 40px; margin-top: 8px;
+  }
+  .visualizer .bar {
+    width: 4px; background: var(--accent); border-radius: 2px;
+    transition: height 0.05s; min-height: 2px;
+  }
+
+  /* Latency stats */
+  .stats { display: flex; gap: 16px; flex-wrap: wrap; margin-top: 12px; }
+  .stat { font-size: 0.7rem; }
+  .stat .val { font-size: 1rem; font-weight: 700; color: var(--accent); }
+  .stat .lbl { color: var(--muted); }
+
+  /* Connecting overlay */
+  .connecting {
+    position: fixed; inset: 0; background: rgba(10,10,15,0.9);
+    display: flex; align-items: center; justify-content: center;
+    z-index: 100; flex-direction: column; gap: 16px;
+  }
+  .connecting.hidden { display: none; }
+  .spinner {
+    width: 40px; height: 40px; border: 3px solid var(--border);
+    border-top-color: var(--accent); border-radius: 50%;
+    animation: spin 0.8s linear infinite;
+  }
+  @keyframes spin { to { transform: rotate(360deg); } }
+</style>
+</head>
+<body>
+<div class="container">
+  <!-- Header -->
+  <div class="header">
+    <div>
+      <h1>🎙️ Local Multimodal LLM Simulation</h1>
+      <div class="subtitle">Realtime voice + vision assistant test console</div>
+    </div>
+    <div class="badges">
+      <div class="badge" id="badge-ws"><div class="dot"></div><span class="label">WebSocket</span></div>
+      <div class="badge" id="badge-mic"><div class="dot"></div><span class="label">Mic</span></div>
+      <div class="badge" id="badge-cam"><div class="dot"></div><span class="label">Camera</span></div>
+    </div>
+  </div>
+
+  <!-- Settings bar -->
+  <div class="card" style="margin-bottom:16px; padding:12px;">
+    <div style="display:flex; gap:16px; align-items:end; flex-wrap:wrap;">
+      <div style="flex:1; min-width:200px;">
+        <label style="font-size:0.7rem; color:var(--muted); display:block; margin-bottom:4px;">Gateway WebSocket URL</label>
+        <input type="text" id="ws-url" value=""
+               style="width:100%; background:#0f0f17; border:1px solid var(--border); color:var(--text); padding:6px 10px; border-radius:6px; font-size:0.8rem;">
+        <script>
+          // Auto-fill WS URL from current page origin
+          document.getElementById('ws-url').value =
+            (location.protocol === 'https:' ? 'wss://' : 'ws://') + location.hostname + ':' + location.port + '/realtime';
+        </script>
+      </div>
+      <button id="btn-connect" class="primary"><span class="icon">🔌</span>Connect</button>
+      <button id="btn-disconnect" class="danger" disabled><span class="icon">⏹</span>Disconnect</button>
+    </div>
+  </div>
+
+  <!-- Controls -->
+  <div class="controls">
+    <button id="btn-mic" disabled><span class="icon">🎤</span>Enable Mic</button>
+    <button id="btn-camera" disabled><span class="icon">📷</span>Enable Camera</button>
+    <button id="btn-ptt" disabled><span class="icon">◉</span>Hold to Talk</button>
+    <button id="btn-mute" disabled><span class="icon">🔇</span>Mute</button>
+    <button id="btn-stop" class="danger" disabled><span class="icon">✂️</span>Stop</button>
+    <button id="btn-clear"><span class="icon">🗑</span>Clear</button>
+  </div>
+
+  <!-- Main grid -->
+  <div class="grid">
+    <!-- Left: Camera + State -->
+    <div>
+      <div class="card video-card" style="margin-bottom:16px;">
+        <div class="card-title">📷 Camera</div>
+        <div class="placeholder" id="cam-placeholder">Camera not started</div>
+        <video id="video" autoplay muted playsinline style="display:none;"></video>
+        <canvas id="canvas" style="display:none;"></canvas>
+        <div class="frame-badge" id="frame-badge" style="display:none;">Frame sent ✓</div>
+      </div>
+
+      <div class="card">
+        <div class="card-title">📊 Pipeline State</div>
+        <div class="state-bar" id="state-bar">
+          <div class="state-dot"></div>
+          <span id="state-text">Disconnected</span>
+        </div>
+        <div class="visualizer" id="visualizer"></div>
+        <div class="stats" id="stats">
+          <div class="stat"><div class="val" id="stat-stt">—</div><div class="lbl">STT (ms)</div></div>
+          <div class="stat"><div class="val" id="stat-llm">—</div><div class="lbl">LLM first token (ms)</div></div>
+          <div class="stat"><div class="val" id="stat-tts">—</div><div class="lbl">TTS first audio (ms)</div></div>
+          <div class="stat"><div class="val" id="stat-total">—</div><div class="lbl">Total (ms)</div></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Right: Transcript -->
+    <div class="card transcript-card">
+      <div class="card-title">💬 Conversation</div>
+      <div id="messages">
+        <div style="text-align:center; color:var(--muted); padding:40px 0; font-size:0.8rem;">
+          Connect and enable your mic to start talking.
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Connecting overlay -->
+<div class="connecting hidden" id="connecting-overlay">
+  <div class="spinner"></div>
+  <div style="color:var(--muted); font-size:0.85rem;" id="connecting-text">Connecting...</div>
+</div>
+
+<script>
+// ============ State ============
+let ws = null;
+let micEnabled = false;
+let isMuted = false;
+let cameraEnabled = false;
+let isPTT = false;
+let micStream = null;
+let cameraStream = null;
+let inputCtx = null;
+let outputCtx = null;
+let scriptNode = null;
+let frameInterval = null;
+let turnStartTime = 0;
+let sttTime = 0;
+let llmFirstTime = 0;
+let ttsFirstTime = 0;
+let currentAIMsg = null;
+
+// ============ DOM ============
+const $ = (id) => document.getElementById(id);
+const wsUrl = $('ws-url');
+const btnConnect = $('btn-connect');
+const btnDisconnect = $('btn-disconnect');
+const btnMic = $('btn-mic');
+const btnCamera = $('btn-camera');
+const btnPTT = $('btn-ptt');
+const btnMute = $('btn-mute');
+const btnStop = $('btn-stop');
+const btnClear = $('btn-clear');
+const messages = $('messages');
+const stateBar = $('state-bar');
+const stateText = $('state-text');
+const video = $('video');
+const canvas = $('canvas');
+const camPlaceholder = $('cam-placeholder');
+const frameBadge = $('frame-badge');
+const overlay = $('connecting-overlay');
+
+// ============ Badge helpers ============
+function setBadge(id, state) {
+  const el = $('badge-' + id);
+  el.classList.remove('ok', 'err', 'active');
+  if (state) el.classList.add(state);
+}
+
+function setState(state) {
+  stateBar.className = 'state-bar ' + state;
+  const labels = {
+    '': 'Idle',
+    'listening': '🎤 Listening...',
+    'thinking': '🧠 Thinking...',
+    'speaking': '🔊 Speaking...',
+    'disconnected': 'Disconnected',
+  };
+  stateText.textContent = labels[state] || state;
+}
+
+// ============ Visualizer ============
+const VIS_BARS = 20;
+const visContainer = $('visualizer');
+const visBars = [];
+for (let i = 0; i < VIS_BARS; i++) {
+  const bar = document.createElement('div');
+  bar.className = 'bar';
+  bar.style.height = '2px';
+  visContainer.appendChild(bar);
+  visBars.push(bar);
+}
+let analyser = null;
+function updateVisualizer() {
+  if (!analyser) {
+    visBars.forEach(b => b.style.height = '2px');
+    return;
+  }
+  const data = new Uint8Array(analyser.frequencyBinCount);
+  analyser.getByteFrequencyData(data);
+  const step = Math.floor(data.length / VIS_BARS);
+  for (let i = 0; i < VIS_BARS; i++) {
+    let avg = 0;
+    for (let j = 0; j < step; j++) avg += data[i * step + j];
+    avg = avg / step / 255;
+    visBars[i].style.height = Math.max(2, avg * 40) + 'px';
+  }
+}
+setInterval(updateVisualizer, 50);
+
+// ============ Stats ============
+function setStat(id, val) {
+  $(id).textContent = val > 0 ? Math.round(val) : '—';
+}
+
+function resetStats() {
+  sttTime = llmFirstTime = ttsFirstTime = 0;
+  setStat('stat-stt', 0); setStat('stat-llm', 0);
+  setStat('stat-tts', 0); setStat('stat-total', 0);
+}
+
+// ============ WebSocket ============
+function connect() {
+  const url = wsUrl.value.trim();
+  if (!url) return;
+
+  overlay.classList.remove('hidden');
+  $('connecting-text').textContent = 'Connecting to ' + url + '...';
+
+  try {
+    ws = new WebSocket(url);
+    ws.binaryType = 'arraybuffer';
+  } catch(e) {
+    overlay.classList.add('hidden');
+    addMessage('error', 'Connection error: ' + e.message);
+    return;
+  }
+
+  ws.onopen = () => {
+    overlay.classList.add('hidden');
+    setBadge('ws', 'ok');
+    btnConnect.disabled = true;
+    btnDisconnect.disabled = false;
+    btnMic.disabled = false;
+    btnCamera.disabled = false;
+    btnMute.disabled = true;
+    setState('');
+  };
+
+  ws.onmessage = (event) => {
+    if (event.data instanceof ArrayBuffer) {
+      handleAudioResponse(event.data);
+    } else {
+      handleJSONMessage(JSON.parse(event.data));
+    }
+  };
+
+  ws.onerror = () => {
+    setBadge('ws', 'err');
+    overlay.classList.add('hidden');
+    addMessage('error', '⚠️ WebSocket error. Check the URL and that the gateway is running.');
+  };
+
+  ws.onclose = () => {
+    setBadge('ws', '');
+    btnConnect.disabled = false;
+    btnDisconnect.disabled = true;
+    btnMic.disabled = true;
+    btnCamera.disabled = true;
+    btnPTT.disabled = true;
+    btnMute.disabled = true;
+    btnStop.disabled = true;
+    setState('disconnected');
+    stopMic();
+    stopCamera();
+  };
+}
+
+function disconnect() {
+  if (ws) ws.close();
+}
+
+function sendJSON(obj) {
+  if (ws && ws.readyState === WebSocket.OPEN) {
+    ws.send(JSON.stringify(obj));
+  }
+}
+
+// ============ Handle gateway messages ============
+function handleJSONMessage(data) {
+  switch(data.type) {
+    case 'connected':
+      addMessage('system', 'Gateway: ' + (data.message || 'connected'));
+      break;
+
+    case 'transcript':
+      if (data.is_final) {
+        addMessage('user', data.text);
+        sttTime = Date.now() - turnStartTime;
+        setStat('stat-stt', sttTime);
+      }
+      break;
+
+    case 'response_start':
+      currentAIMsg = addMessage('ai', '');
+      currentAIMsg.classList.add('partial');
+      setState('speaking');
+      btnStop.disabled = false;
+      if (!llmFirstTime) {
+        llmFirstTime = Date.now() - turnStartTime;
+        setStat('stat-llm', llmFirstTime);
+      }
+      break;
+
+    case 'response_text':
+      if (currentAIMsg) {
+        const textEl = currentAIMsg.querySelector('.text');
+        textEl.textContent = data.text;
+        messages.scrollTop = messages.scrollHeight;
+      }
+      break;
+
+    case 'response_end':
+      if (currentAIMsg) {
+        currentAIMsg.classList.remove('partial');
+        const total = Date.now() - turnStartTime;
+        setStat('stat-total', total);
+      }
+      currentAIMsg = null;
+      setState('');
+      btnStop.disabled = true;
+      break;
+
+    case 'interrupted':
+      if (currentAIMsg) currentAIMsg.classList.remove('partial');
+      currentAIMsg = null;
+      setState('listening');
+      btnStop.disabled = true;
+      stopPlayback();
+      turnStartTime = Date.now();
+      resetStats();
+      break;
+
+    case 'error':
+      addMessage('error', 'Error: ' + data.message);
+      break;
+
+    case 'pong':
+      break;
+
+    case 'escalating':
+      setState('thinking');
+      addMessage('system', '⏳ Asking agent backend...');
+      break;
+
+    case 'toolCall':
+      setState('thinking');
+      const fcNames = (data.toolCall?.functionCalls || []).map(f => f.name).join(', ');
+      addMessage('system', '🔧 Calling tool: ' + fcNames);
+      break;
+
+    case 'toolResponse':
+      const responses = data.toolResponse?.functionResponses || [];
+      responses.forEach(r => {
+        addMessage('system', '✅ ' + r.name + ': ' + (r.response?.result || '').slice(0, 100));
+      });
+      break;
+  }
+}
+
+// ============ Audio playback (TTS output) ============
+let playQueue = [];
+let isPlaying = false;
+let nextPlayTime = 0;
+let activeAudioSources = [];
+
+function handleAudioResponse(buffer) {
+  if (!ttsFirstTime) {
+    ttsFirstTime = Date.now() - turnStartTime;
+    setStat('stat-tts', ttsFirstTime);
+  }
+
+  if (!outputCtx) {
+    outputCtx = new AudioContext({ sampleRate: 24000 });
+  }
+
+  const pcm = new Int16Array(buffer);
+  const float32 = new Float32Array(pcm.length);
+  for (let i = 0; i < pcm.length; i++) {
+    float32[i] = pcm[i] / 32768.0;
+  }
+
+  const audioBuffer = outputCtx.createBuffer(1, float32.length, 24000);
+  audioBuffer.copyToChannel(float32, 0);
+
+  const source = outputCtx.createBufferSource();
+  source.buffer = audioBuffer;
+  source.connect(outputCtx.destination);
+
+  activeAudioSources.push(source);
+  source.onended = () => {
+    activeAudioSources = activeAudioSources.filter(s => s !== source);
+  };
+
+  const now = outputCtx.currentTime;
+  const startTime = Math.max(now, nextPlayTime);
+  source.start(startTime);
+  nextPlayTime = startTime + audioBuffer.duration;
+}
+
+function stopPlayback() {
+  for (const src of activeAudioSources) {
+    try { src.stop(); } catch(e) {}
+  }
+  activeAudioSources = [];
+  nextPlayTime = 0;
+}
+
+// ============ Microphone capture ============
+async function startMic() {
+  try {
+    micStream = await navigator.mediaDevices.getUserMedia({
+      audio: {
+        channelCount: 1,
+        sampleRate: 16000,
+        echoCancellation: true,
+        noiseSuppression: true,
+      }
+    });
+
+    inputCtx = new AudioContext({ sampleRate: 16000 });
+    const source = inputCtx.createMediaStreamSource(micStream);
+
+    analyser = inputCtx.createAnalyser();
+    analyser.fftSize = 256;
+    source.connect(analyser);
+
+    const bufferSize = 4096;
+    scriptNode = inputCtx.createScriptProcessor(bufferSize, 1, 1);
+    scriptNode.onaudioprocess = (e) => {
+      if (!micEnabled || isMuted) return;
+
+      const input = e.inputBuffer.getChannelData(0);
+      const pcm = new Int16Array(input.length);
+      for (let i = 0; i < input.length; i++) {
+        let s = Math.max(-1, Math.min(1, input[i]));
+        pcm[i] = s < 0 ? s * 0x8000 : s * 0x7FFF;
+      }
+
+      if (btnPTT.textContent.includes('Release') || !usingPTT) {
+        sendAudioChunk(pcm.buffer);
+      }
+    };
+    source.connect(scriptNode);
+    scriptNode.connect(inputCtx.destination);
+
+    micEnabled = true;
+    usingPTT = false;
+    isMuted = false;
+    setBadge('mic', 'ok');
+    btnMic.innerHTML = '<span class="icon">🔇</span>Disable Mic';
+    btnMute.disabled = false;
+    btnMute.innerHTML = '<span class="icon">🔇</span>Mute';
+    btnMute.classList.remove('danger');
+  } catch(e) {
+    addMessage('error', 'Mic error: ' + e.message);
+    setBadge('mic', 'err');
+  }
+}
+
+function stopMic() {
+  micEnabled = false;
+  if (scriptNode) { scriptNode.disconnect(); scriptNode = null; }
+  if (analyser) { analyser.disconnect(); analyser = null; }
+  if (micStream) { micStream.getTracks().forEach(t => t.stop()); micStream = null; }
+  if (inputCtx) { inputCtx.close(); inputCtx = null; }
+  setBadge('mic', '');
+  btnMic.innerHTML = '<span class="icon">🎤</span>Enable Mic';
+  btnPTT.disabled = true;
+  btnMute.disabled = true;
+  isMuted = false;
+  btnMute.innerHTML = '<span class="icon">🔇</span>Mute';
+  btnMute.classList.remove('danger');
+}
+
+function sendAudioChunk(buffer) {
+  if (ws && ws.readyState === WebSocket.OPEN) {
+    ws.send(buffer);
+    if (!turnStartTime) turnStartTime = Date.now();
+  }
+}
+
+// Monitor state changes to reset turn timer
+const origSetState = setState;
+let prevState = '';
+setState = function(state) {
+  if (state === 'listening' && prevState !== 'listening') {
+    turnStartTime = Date.now();
+    resetStats();
+  }
+  prevState = state;
+  origSetState(state);
+};
+
+// ============ Camera capture ============
+async function startCamera() {
+  try {
+    cameraStream = await navigator.mediaDevices.getUserMedia({
+      video: { facingMode: 'user', width: { ideal: 640 }, height: { ideal: 480 } }
+    });
+    video.srcObject = cameraStream;
+    video.style.display = 'block';
+    camPlaceholder.style.display = 'none';
+    cameraEnabled = true;
+    setBadge('cam', 'ok');
+    btnCamera.innerHTML = '<span class="icon">📷</span>Disable Camera';
+
+    frameInterval = setInterval(() => {
+      if (!cameraEnabled) return;
+      canvas.width = 640;
+      canvas.height = 480;
+      const ctx = canvas.getContext('2d');
+      ctx.drawImage(video, 0, 0, 640, 480);
+      const dataUrl = canvas.toDataURL('image/jpeg', 0.6);
+      const base64 = dataUrl.split(',')[1];
+      sendJSON({ type: 'video_frame', data: base64 });
+
+      frameBadge.style.display = 'block';
+      frameBadge.textContent = 'Frame sent ✓';
+      setTimeout(() => { frameBadge.style.display = 'none'; }, 800);
+    }, 1000);
+  } catch(e) {
+    addMessage('error', 'Camera error: ' + e.message);
+    setBadge('cam', 'err');
+  }
+}
+
+function stopCamera() {
+  cameraEnabled = false;
+  if (frameInterval) { clearInterval(frameInterval); frameInterval = null; }
+  if (cameraStream) { cameraStream.getTracks().forEach(t => t.stop()); cameraStream = null; }
+  video.style.display = 'none';
+  camPlaceholder.style.display = 'flex';
+  setBadge('cam', '');
+  btnCamera.innerHTML = '<span class="icon">📷</span>Enable Camera';
+}
+
+// ============ Push to talk ============
+let usingPTT = false;
+btnPTT.addEventListener('mousedown', startPTT);
+btnPTT.addEventListener('mouseup', stopPTT);
+btnPTT.addEventListener('mouseleave', stopPTT);
+btnPTT.addEventListener('touchstart', (e) => { e.preventDefault(); startPTT(); });
+btnPTT.addEventListener('touchend', (e) => { e.preventDefault(); stopPTT(); });
+
+function startPTT() {
+  if (!micEnabled || isMuted) return;
+  usingPTT = true;
+  btnPTT.innerHTML = '<span class="icon">🔴</span>Release to Send';
+  btnPTT.classList.add('primary');
+  turnStartTime = Date.now();
+  resetStats();
+  setState('listening');
+}
+
+function stopPTT() {
+  if (!usingPTT) return;
+  usingPTT = false;
+  btnPTT.innerHTML = '<span class="icon">◉</span>Hold to Talk';
+  btnPTT.classList.remove('primary');
+  if (inputCtx) {
+    const silence = new Int16Array(16000);
+    if (ws && ws.readyState === WebSocket.OPEN) {
+      ws.send(silence.buffer);
+    }
+  }
+}
+
+// ============ Messages UI ============
+function addMessage(role, text) {
+  if (messages.children.length === 1 && messages.children[0].style.textAlign === 'center') {
+    messages.innerHTML = '';
+  }
+
+  const div = document.createElement('div');
+  div.className = 'msg ' + role;
+  const roleLabel = { user: 'You', ai: 'Assistant', system: 'System', error: 'Error' };
+  div.innerHTML = '<div class="role">' + (roleLabel[role] || role) + '</div><div class="text">' + escapeHtml(text) + '</div>';
+  messages.appendChild(div);
+  messages.scrollTop = messages.scrollHeight;
+  return div;
+}
+
+function escapeHtml(text) {
+  const div = document.createElement('div');
+  div.textContent = text;
+  return div.innerHTML;
+}
+
+// ============ Button handlers ============
+btnConnect.addEventListener('click', connect);
+btnDisconnect.addEventListener('click', disconnect);
+
+btnMic.addEventListener('click', () => {
+  if (micEnabled) stopMic();
+  else { turnStartTime = Date.now(); startMic(); }
+});
+
+btnCamera.addEventListener('click', () => {
+  if (cameraEnabled) stopCamera();
+  else startCamera();
+});
+
+btnClear.addEventListener('click', () => {
+  messages.innerHTML = '<div style="text-align:center; color:var(--muted); padding:40px 0; font-size:0.8rem;">Conversation cleared.</div>';
+  resetStats();
+});
+
+btnStop.addEventListener('click', () => {
+  stopPlayback();
+  sendJSON({ type: 'response.cancel' });
+  if (currentAIMsg) currentAIMsg.classList.remove('partial');
+  currentAIMsg = null;
+  btnStop.disabled = true;
+  setState('');
+  turnStartTime = Date.now();
+  resetStats();
+});
+
+btnMute.addEventListener('click', () => {
+  if (!micEnabled) return;
+  isMuted = !isMuted;
+  if (isMuted) {
+    btnMute.innerHTML = '<span class="icon">🔇</span>Unmute';
+    btnMute.classList.add('danger');
+    setBadge('mic', '');
+    setState('');
+  } else {
+    btnMute.innerHTML = '<span class="icon">🔊</span>Mute';
+    btnMute.classList.remove('danger');
+    setBadge('mic', 'ok');
+    setState('listening');
+  }
+});
+
+wsUrl.addEventListener('keydown', (e) => {
+  if (e.key === 'Enter') connect();
+});
+</script>
+</body>
+</html>
